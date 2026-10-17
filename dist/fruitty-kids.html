@@ -65,6 +65,28 @@
   .freeze i { width: 120px; height: 14px; border-radius: 8px; background: rgba(20, 18, 31, 0.55); border: 2px solid #fff; overflow: hidden; }
   .freeze b { display: block; height: 100%; background: linear-gradient(90deg, #bfefff, #4fc3ff); transform-origin: left; }
 
+  /* the buddy: his button (bottom right, out of the way of swipes) and his guard bar under the score */
+  .buddybtn {
+    position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom));
+    pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 7px 6px; border-radius: 18px;
+    background: linear-gradient(135deg, #ffb02e, #ff7a1a); border: 3px solid #fff; box-shadow: 0 5px 0 var(--ink);
+    touch-action: manipulation;
+  }
+  .buddybtn img { width: 64px; height: 64px; border-radius: 12px; background: radial-gradient(circle at 50% 35%, #fff3d0, #ffb02e); }
+  .buddybtn b { font-family: var(--display); font-size: 13px; font-weight: 400; text-shadow: 0 2px 0 var(--ink); }
+  .buddybtn:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+  .buddybtn.guarding { animation: glow 1.1s ease-in-out infinite; border-color: var(--yellow); }
+  @keyframes glow { 50% { box-shadow: 0 0 26px 6px rgba(255, 212, 0, 0.85), 0 5px 0 var(--ink); } }
+  .pw { display: none; align-items: center; gap: 8px; margin-top: 10px; }
+  .pw.on { display: flex; }
+  .pw .face { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; border: 2px solid #fff; background: #ffb02e; }
+  .pw .face img { width: 100%; height: 100%; object-fit: cover; }
+  .pw i { width: 104px; height: 12px; border-radius: 7px; background: rgba(20, 18, 31, 0.55); border: 2px solid #fff; overflow: hidden; }
+  .pw i b { display: block; height: 100%; background: linear-gradient(90deg, #ffb02e, #ff7a1a); transform-origin: left; }
+  @media (max-width: 620px) {
+    .buddybtn img { width: 52px; height: 52px; }
+  }
+
   #toasts { position: fixed; left: 50%; top: 26%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; z-index: 6; }
   .toast {
     font-family: var(--display); font-size: clamp(26px, 5.5vw, 44px); color: var(--yellow); max-width: 92vw; text-align: center; white-space: nowrap;
@@ -164,6 +186,9 @@
   .avatar.hero .nm { font-size: 19px; }
   .avatar .bs { font-size: 11px; font-weight: 700; opacity: 0.85; }
   .avatar:hover { transform: translateY(-2px); }
+  .avatar.buddy { border-style: dashed; border-color: #ffd27a; }
+  .avatar.buddy img { background: radial-gradient(circle at 50% 35%, #ffe2a0, #ff9f1c); }
+  .avatar.buddy .bs { color: #ffd27a; opacity: 1; }
   .avatar[aria-checked="true"] {
     border-color: var(--yellow); background: rgba(255, 212, 0, 0.3); transform: translateY(-4px) scale(1.06);
     box-shadow: 0 0 0 3px var(--ink), 0 10px 24px rgba(0, 0, 0, 0.35);
@@ -222,7 +247,9 @@
   <div class="hud-left">
     <div id="score" class="score">0</div>
     <div class="hudbest">BEST <b id="hudBest">0</b></div>
+    <div class="pw" id="pwBuddy" title="Your buddy is guarding you"><span class="face"><img id="pwBuddyFace" alt=""></span><i><b id="pwBuddyFill"></b></i></div>
   </div>
+  <button id="buddyBtn" class="buddybtn" title="Call your buddy (T)"><img id="buddyFace" alt=""><b id="buddyName">TOMMY</b></button>
   <div class="freeze" id="freezeBar"><span>❄️</span><i><b id="freezeFill"></b></i></div>
   <div class="hud-right">
     <div id="lives"></div>
@@ -244,6 +271,7 @@
   <div class="howto mouse-only">
     <div>🖱️ hold the mouse button and swipe to slice</div>
     <div><kbd>←</kbd><kbd>→</kbd> pick chef</div>
+    <div><kbd>T</kbd> call <span id="buddyKeyName">Tommy</span></div>
     <div><kbd>Space</kbd> play</div>
     <div><kbd>P</kbd> pause</div>
     <div><kbd>M</kbd> sound</div>
@@ -1576,7 +1604,7 @@
     };
     for (const p of def.parts) {
       const front = golden ? (p.role === 'skin' ? GOLD : GOLD_LEAF) : p.mat;
-      g.add(place(new T.Mesh(p.geo, clip(front)), p));
+      g.add(place(new T.Mesh(p.geo, Array.isArray(front) ? front.map(clip) : clip(front)), p));
       if (p.back) g.add(place(new T.Mesh(p.geo, basic(golden ? FLESH_GOLD : p.back)), p));
       if (p.inner) g.add(place(new T.Mesh(p.geo, basic(golden ? '#ffd24a' : p.inner.color, golden ? null : p.inner.map)), p, p.inner.s));
     }
@@ -1680,6 +1708,76 @@
     return g;
   }
 
+  // ---------------------------------------------------------------- character cards (tossed when you call the buddy)
+
+  // A trading card of a roster character: portrait and name on the front, a star pattern on the back. It slices
+  // like a fruit, so it is registered as one more fruit type, 'card-<id>'.
+  function card(entry, portraitURL) {
+    const id = 'card-' + entry.id;
+    if (FRUITS[id]) return id;
+    const color = entry.tag || { zoom: '#18b4ff', luna: '#b48cff', bolt: '#ff8a1f', bruno: '#2fb36a', zombie: '#8fbf6a' }[entry.id] || '#ffd400';
+    const W = 256, H = 352;
+    const [c, g] = canvas(W, H);
+    const front = tex(c);
+    const paint = (img) => {
+      g.clearRect(0, 0, W, H);
+      const rr = (x, y, w, h, r) => {
+        g.beginPath();
+        g.moveTo(x + r, y);
+        g.arcTo(x + w, y, x + w, y + h, r);
+        g.arcTo(x + w, y + h, x, y + h, r);
+        g.arcTo(x, y + h, x, y, r);
+        g.arcTo(x, y, x + w, y, r);
+        g.closePath();
+      };
+      g.fillStyle = '#14121f';
+      rr(0, 0, W, H, 26);
+      g.fill();
+      const grd = g.createLinearGradient(0, 0, 0, H);
+      grd.addColorStop(0, '#ffffff');
+      grd.addColorStop(1, color);
+      g.fillStyle = grd;
+      rr(10, 10, W - 20, H - 20, 18);
+      g.fill();
+      if (img) g.drawImage(img, 18, 22, W - 36, W - 36);
+      g.fillStyle = '#14121f';
+      rr(26, H - 92, W - 52, 62, 16);
+      g.fill();
+      g.font = '40px Bungee, "Arial Black", Impact, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#ffd400';
+      g.fillText(entry.name, W / 2, H - 60);
+      front.needsUpdate = true;
+    };
+    paint(null);
+    if (portraitURL) {
+      const img = new Image();
+      img.onload = () => paint(img);
+      img.src = portraitURL;
+    }
+    const [bc, bg] = canvas(128, 176);
+    bg.fillStyle = '#ffd400';
+    bg.fillRect(0, 0, 128, 176);
+    bg.fillStyle = '#ff3d7f';
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 6; x++) {
+      bg.font = '18px sans-serif';
+      bg.fillText('★', x * 22 + (y % 2 ? 11 : 0), y * 22 + 18);
+    }
+    bg.fillStyle = '#14121f';
+    bg.font = '44px Bungee, "Arial Black", Impact, sans-serif';
+    bg.textAlign = 'center';
+    bg.fillText('TT', 64, 104);
+    const edge = std('#fff8e6', { roughness: 0.6 });
+    const mats = [edge, edge, edge, edge, std('#ffffff', { map: front, roughness: 0.5 }), std('#ffffff', { map: tex(bc), roughness: 0.5 })];
+    FRUITS[id] = {
+      id, r: 1.15, juice: color, card: true, name: entry.name, entryId: entry.id,
+      parts: [{ geo: CARD, mat: mats, role: 'skin', back: '#fff8e6' }],
+    };
+    return id;
+  }
+  const CARD = new T.BoxGeometry(1.5, 2.06, 0.07);
+
   // ---------------------------------------------------------------- public
 
   FT.fruits = {
@@ -1694,6 +1792,7 @@
     half: (id, golden, plane) => halfFruit(FRUITS[id], golden, plane),
     zombie,
     bubble,
+    card,
     glowTexture,
     setZombieMaker(fn) { zombieMaker = fn; },
     canvas,
@@ -2050,10 +2149,12 @@
 
 </script>
 <script>
-/* Fruit Teddy — the chef: your character, standing in the bottom-left corner and reacting to the game.
-   Built with Kit.people from a Kit.roster entry. Reactions:
+/* Fruit Teddy — the chefs. FT.makeActor(side) builds a character from a Kit.roster entry that stands in a bottom
+   corner (side 1 = left, -1 = right), faces the camera and reacts. FT.chef is you (left); the buddy (js/buddy.js)
+   is a second actor on the right. Reactions:
      slice (a little bounce), cheer (arms up), signature (the character's celebration: Tommy's Y, Teddy's
-     jump shot or boxing combo), miss (a wobble), scare (a startled jump), hello, over (goodbye loop). */
+     jump shot or boxing combo), miss (a wobble), scare (a startled jump), hello, over (goodbye loop);
+   act(pose, dur) plays any Kit pose for a moment. */
 (function () {
   'use strict';
   const T = THREE;
@@ -2062,12 +2163,9 @@
   const rand = Kit.gfx.rand;
 
   const DUR = { cheer: 0.7, signature: 1.8, miss: 0.9, scare: 0.9, hello: 1.8, slice: 0 };
-  const SPEED = { idle: 2.2, cheer: 6, boxing: 6, peace: 4.2, wave: 5, jumpshot: 3, fall: 3, jump: 3 };
+  const SPEED = { idle: 2.2, cheer: 6, boxing: 6, peace: 4.2, wave: 5, jumpshot: 3, fall: 3, jump: 3, run: 13, give: 6 };
   const BALL_SIZE = 0.24;
 
-  let scene = null, flyers = null, holder = null, p = null, entry = null, shadow = null, ball = null, hoop = null;
-  const st = { mode: 'idle', pose: 'idle', t: 0, phase: 0, hopY: 0, hopV: 0, wob: 9, wobAmp: 0, sigIx: 0, beat: -1, loop: null, ballT: -1, look: 0 };
-  const ballV = new T.Vector3(), tmp = new T.Vector3(), tmp2 = new T.Vector3(), rimAt = new T.Vector3();
   const RIM = { y: -0.28, z: 0.42, r: 0.36 }; // rim centre relative to the backboard, in hoop units
   const SHOT_TIME = 0.75; // seconds from release to the rim
 
@@ -2139,235 +2237,529 @@
     return g;
   }
 
-  function showHoop() {
-    const s = st.scale;
-    hoop.position.set(holder.position.x + 2.7 * s, holder.position.y + 3.3 * s, holder.position.z + 0.2 * s);
-    hoop.rotation.y = -0.25;
-    hoop.visible = true;
-    st.hoopT = 0;
-  }
+  function makeActor(side) {
+    let scene = null, flyers = null, holder = null, p = null, entry = null, shadow = null, ball = null, hoop = null;
+    const st = { mode: 'idle', pose: 'idle', t: 0, phase: 0, hopY: 0, hopV: 0, wob: 9, wobAmp: 0, sigIx: 0, beat: -1, loop: null, ballT: -1, look: 0, face: null, mul: 1 };
+    const ballV = new T.Vector3(), tmp = new T.Vector3(), tmp2 = new T.Vector3(), rimAt = new T.Vector3();
+    const home = new T.Vector3();
+    const facing = () => (st.face !== null ? st.face : Math.PI + 0.38 * side); // toward the camera, turned to the middle
 
-  function init(sc, fl) {
-    scene = sc;
-    flyers = fl;
-    holder = new T.Group();
-    scene.add(holder);
-    shadow = new T.Sprite(new T.SpriteMaterial({ map: shadowTexture(), depthWrite: false, transparent: true }));
-    shadow.scale.set(1.5, 0.32, 1);
-    shadow.position.set(0, 0.02, -0.4);
-    holder.add(shadow);
-    ball = new T.Mesh(new T.SphereGeometry(BALL_SIZE, 20, 14), Kit.gfx.std('#ffffff', { map: ballTexture(), roughness: 0.6 }));
-    ball.visible = false;
-    scene.add(ball);
-    hoop = buildHoop();
-    scene.add(hoop);
-  }
+    function showHoop() {
+      const s = st.scale;
+      hoop.position.set(holder.position.x + 2.7 * s * side, holder.position.y + 3.3 * s, holder.position.z + 0.2 * s);
+      hoop.rotation.y = -0.25 * side;
+      hoop.visible = true;
+      st.hoopT = 0;
+    }
 
-  function set(id) {
-    entry = Kit.roster.get(id) || Kit.roster.list[0];
-    if (p) holder.remove(p.root);
-    p = Kit.people.build(entry.look);
-    p.root.rotation.y = Math.PI + 0.38; // face the camera, turned a little toward the middle of the screen
-    holder.add(p.root);
-    st.sigIx = 0;
-    st.mode = 'idle';
-    st.loop = null;
-    st.ballT = -1;
-    ball.visible = hoop.visible = false;
-    Kit.people.pose(p, 0, 'idle', 1);
-    return entry;
-  }
+    function init(sc, fl) {
+      scene = sc;
+      flyers = fl;
+      holder = new T.Group();
+      scene.add(holder);
+      shadow = new T.Sprite(new T.SpriteMaterial({ map: shadowTexture(), depthWrite: false, transparent: true }));
+      shadow.scale.set(1.5, 0.32, 1);
+      shadow.position.set(0, 0.02, -0.4);
+      holder.add(shadow);
+      ball = new T.Mesh(new T.SphereGeometry(BALL_SIZE, 20, 14), Kit.gfx.std('#ffffff', { map: ballTexture(), roughness: 0.6 }));
+      ball.visible = false;
+      scene.add(ball);
+      hoop = buildHoop();
+      scene.add(hoop);
+    }
 
-  // Stand in the bottom-left corner of the view rectangle `v` ({ W, H, z } at the chef's depth).
-  function place(v, portrait) {
-    const h = portrait ? Math.min(v.H * 0.2, v.W * 0.42) : v.H * 0.3; // character height in world units
-    const s = h / 2.05;
-    holder.scale.setScalar(s);
-    holder.position.set(-v.W / 2 + 0.62 * s + v.W * 0.02, -v.H / 2 + 0.16 * s, v.z);
-    st.scale = s;
-  }
+    // Build the character for roster entry `id`; `mul` scales him (a buddy is smaller: entry.buddyScale).
+    function set(id, mul = 1) {
+      entry = Kit.roster.get(id) || Kit.roster.list[0];
+      if (p) holder.remove(p.root);
+      p = Kit.people.build(entry.look);
+      p.root.rotation.y = facing();
+      holder.add(p.root);
+      st.mul = mul;
+      st.sigIx = 0;
+      st.mode = 'idle';
+      st.loop = null;
+      st.ballT = -1;
+      ball.visible = hoop.visible = false;
+      Kit.people.pose(p, 0, 'idle', 1);
+      return entry;
+    }
 
-  // Start a reaction. Returns the pose used.
-  function react(kind) {
-    if (!p) return null;
-    if (st.loop && kind !== 'hello' && kind !== 'idle') return st.pose; // game over: keep celebrating
-    switch (kind) {
-      case 'slice':
-        if (st.mode === 'idle') st.hopV = Math.max(st.hopV, 1.6);
-        return st.pose;
-      case 'cheer':
-        if (st.mode === 'signature') return st.pose;
-        return begin('cheer', 'jump', DUR.cheer, 3.2);
-      case 'signature': {
-        if (st.mode === 'signature' && st.t > 0.5) return st.pose;
-        const sig = entry.signature || ['wave'];
-        const pose = sig[st.sigIx++ % sig.length];
-        return begin('signature', pose, DUR.signature, hopFor(pose));
+    // Stand in a bottom corner of the view rectangle `v` ({ W, H, z } at the actor's depth), keeping `reserve`
+    // world units clear at that edge (the buddy leaves room for his button).
+    function place(v, portrait, reserve = 0) {
+      const h = portrait ? Math.min(v.H * 0.2, v.W * 0.42) : v.H * 0.3; // a full-size chef's height in world units
+      const s = (h / 2.05) * st.mul;
+      holder.scale.setScalar(s);
+      home.set(-side * (v.W / 2 - reserve - 0.62 * s - v.W * 0.02), -v.H / 2 + 0.16 * s, v.z);
+      holder.position.copy(home);
+      st.scale = s;
+    }
+
+    // Start a reaction. Returns the pose used.
+    function react(kind) {
+      if (!p) return null;
+      if (st.loop && kind !== 'hello' && kind !== 'idle') return st.pose; // game over: keep celebrating
+      switch (kind) {
+        case 'slice':
+          if (st.mode === 'idle') st.hopV = Math.max(st.hopV, 1.6);
+          return st.pose;
+        case 'cheer':
+          if (st.mode === 'signature') return st.pose;
+          return begin('cheer', 'jump', DUR.cheer, 3.2);
+        case 'signature': {
+          if (st.mode === 'signature' && st.t > 0.5) return st.pose;
+          const sig = entry.signature || ['wave'];
+          const pose = sig[st.sigIx++ % sig.length];
+          return begin('signature', pose, DUR.signature, hopFor(pose));
+        }
+        case 'hello':
+          st.loop = null;
+          return begin('signature', Kit.roster.signature(entry, 'hello'), DUR.hello, 2.6);
+        case 'goodbye': {
+          const pose = Kit.roster.signature(entry, 'goodbye');
+          return begin('signature', pose, DUR.signature, hopFor(pose));
+        }
+        case 'miss':
+          st.wob = 0;
+          st.wobAmp = 0.22;
+          if (st.mode === 'signature') return st.pose;
+          return begin('miss', 'fall', DUR.miss, 0);
+        case 'scare':
+          st.wob = 0;
+          st.wobAmp = 0.12;
+          return begin('scare', 'jump', DUR.scare, 4.5);
+        case 'over': {
+          // goodbye pose first, then keep cycling the celebrations until the next game
+          const sig = entry.signature || ['wave'];
+          const pose = Kit.roster.signature(entry, 'goodbye');
+          st.sigIx = sig.indexOf(pose) + 1;
+          st.loop = true;
+          st.loopWait = 0.8;
+          return begin('signature', pose, DUR.signature, hopFor(pose));
+        }
+        case 'idle':
+          st.loop = null;
+          st.mode = 'idle';
+          st.pose = 'idle';
+          return 'idle';
       }
-      case 'hello':
-        st.loop = null;
-        return begin('signature', Kit.roster.signature(entry, 'hello'), DUR.hello, 2.6);
-      case 'miss':
-        st.wob = 0;
-        st.wobAmp = 0.22;
-        if (st.mode === 'signature') return st.pose;
-        return begin('miss', 'fall', DUR.miss, 0);
-      case 'scare':
-        st.wob = 0;
-        st.wobAmp = 0.12;
-        return begin('scare', 'jump', DUR.scare, 4.5);
-      case 'over': {
-        // goodbye pose first, then keep cycling the celebrations until the next game
-        const sig = entry.signature || ['wave'];
-        const pose = Kit.roster.signature(entry, 'goodbye');
-        st.sigIx = sig.indexOf(pose) + 1;
-        st.loop = true;
-        st.loopWait = 0.8;
-        return begin('signature', pose, DUR.signature, hopFor(pose));
+      return null;
+    }
+
+    // Play any Kit pose for `dur` seconds (the buddy's run, chop and hand-over), unless a celebration is on.
+    function act(pose, dur, hop = 0, force = false) {
+      if (!p || (!force && st.mode === 'signature' && st.t > 0.2)) return st.pose;
+      if (st.mode === 'act' && st.pose === pose) {
+        st.t = Math.max(st.t, dur); // already doing it: keep the cycle going
+        return pose;
       }
-      case 'idle':
-        st.loop = null;
+      return begin('act', pose, dur, hop);
+    }
+
+    const hopFor = (pose) => (pose === 'jumpshot' ? 5.2 : pose === 'peace' ? 2.6 : 1.4);
+
+    function begin(mode, pose, dur, hop) {
+      st.mode = mode;
+      st.pose = pose;
+      st.t = dur;
+      st.phase = 0;
+      st.beat = -1;
+      if (hop) st.hopV = hop;
+      st.since = 0;
+      st.bursts = 0;
+      if (pose === 'jumpshot') {
+        st.ballT = 0;
+        st.swished = false;
+        showHoop();
+      }
+      return pose;
+    }
+
+    function update(dt, lookX) {
+      if (!p) return;
+      st.t -= dt;
+      if (st.mode !== 'idle' && st.t <= 0) {
         st.mode = 'idle';
         st.pose = 'idle';
-        return 'idle';
-    }
-    return null;
-  }
-
-  const hopFor = (pose) => (pose === 'jumpshot' ? 5.2 : pose === 'peace' ? 2.6 : 1.4);
-
-  function begin(mode, pose, dur, hop) {
-    st.mode = mode;
-    st.pose = pose;
-    st.t = dur;
-    st.phase = 0;
-    st.beat = -1;
-    if (hop) st.hopV = hop;
-    st.since = 0;
-    st.bursts = 0;
-    if (pose === 'jumpshot') {
-      st.ballT = 0;
-      st.swished = false;
-      showHoop();
-    }
-    return pose;
-  }
-
-  function update(dt, lookX) {
-    if (!p) return;
-    st.t -= dt;
-    if (st.mode !== 'idle' && st.t <= 0) {
-      st.mode = 'idle';
-      st.pose = 'idle';
-    }
-    if (st.loop && st.mode === 'idle') {
-      st.loopWait -= dt;
-      if (st.loopWait <= 0) {
-        st.loopWait = 0.8;
-        const sig = entry.signature || ['wave'];
-        const pose = sig[st.sigIx++ % sig.length];
-        begin('signature', pose, DUR.signature, hopFor(pose));
       }
-    }
-    st.phase += dt * (SPEED[st.pose] || 2.2);
-    Kit.people.pose(p, st.phase, st.pose, 1 - Math.exp(-14 * dt));
-    // the chef stands still: tone the running stride of the celebration poses down to a little dance
-    if (st.pose === 'peace' || st.pose === 'wave' || st.pose === 'idle') {
-      p.legL.rotation.x *= 0.35;
-      p.legR.rotation.x *= 0.35;
-    }
-    if (st.pose === 'idle') {
-      const breathe = Math.sin(st.phase) * 0.03;
-      p.armL.rotation.z = -0.08 - breathe;
-      p.armR.rotation.z = 0.08 + breathe;
-    }
-    // hop
-    st.hopV -= 14 * dt;
-    st.hopY = Math.max(0, st.hopY + st.hopV * dt);
-    if (st.hopY === 0 && st.hopV < 0) st.hopV = 0;
-    p.root.position.y = st.hopY;
-    shadow.material.opacity = 1 / (1 + st.hopY * 1.5);
-    // wobble after a miss or a scare
-    st.wob += dt;
-    holder.rotation.z = st.wobAmp * Math.sin(st.wob * 17) * Math.exp(-st.wob * 3.2);
-    // head follows the fruit (lookX: -1 left .. 1 right of the chef)
-    st.look += ((lookX || 0) * 0.55 - st.look) * (1 - Math.exp(-5 * dt));
-    p.head.rotation.y = st.look;
+      if (st.loop && st.mode === 'idle') {
+        st.loopWait -= dt;
+        if (st.loopWait <= 0) {
+          st.loopWait = 0.8;
+          const sig = entry.signature || ['wave'];
+          const pose = sig[st.sigIx++ % sig.length];
+          begin('signature', pose, DUR.signature, hopFor(pose));
+        }
+      }
+      st.phase += dt * (SPEED[st.pose] || 2.2);
+      p.root.rotation.y += (facing() - p.root.rotation.y) * (1 - Math.exp(-10 * dt));
+      Kit.people.pose(p, st.phase, st.pose, 1 - Math.exp(-14 * dt));
+      // the chef stands still: tone the running stride of the celebration poses down to a little dance
+      if (st.pose === 'peace' || st.pose === 'wave' || st.pose === 'idle' || st.pose === 'give') {
+        p.legL.rotation.x *= 0.35;
+        p.legR.rotation.x *= 0.35;
+      }
+      if (st.pose === 'idle') {
+        const breathe = Math.sin(st.phase) * 0.03;
+        p.armL.rotation.z = -0.08 - breathe;
+        p.armR.rotation.z = 0.08 + breathe;
+      }
+      // hop
+      st.hopV -= 14 * dt;
+      st.hopY = Math.max(0, st.hopY + st.hopV * dt);
+      if (st.hopY === 0 && st.hopV < 0) st.hopV = 0;
+      p.root.position.y = st.hopY;
+      shadow.material.opacity = 1 / (1 + st.hopY * 1.5);
+      // wobble after a miss or a scare
+      st.wob += dt;
+      holder.rotation.z = st.wobAmp * Math.sin(st.wob * 17) * Math.exp(-st.wob * 3.2);
+      // head follows the fruit (lookX: -1 left .. 1 right of the chef)
+      st.look += ((lookX || 0) * 0.55 - st.look) * (1 - Math.exp(-5 * dt));
+      p.head.rotation.y = st.look;
 
-    holder.updateMatrixWorld(true);
-    // boxing: a POW at each punch
-    if (st.pose === 'boxing') {
-      const beat = Math.floor((((st.phase / (Math.PI * 2)) % 1) + 1) % 1 * 4);
-      if (beat !== st.beat) {
-        st.beat = beat;
-        if (beat === 0 || beat === 2) {
-          FT.sfx.kit('punch');
-          // the jab is the lead (left) hand, the straight the right
-          Kit.people.handWorld(p, beat === 0 ? -1 : 1, tmp);
-          flyers.add('💥', tmp.x + 0.25 * st.scale, tmp.y, tmp.z + 0.6, rand(0.5, 1.2), rand(0.4, 1), 0.6 * st.scale, 0.45, 0, 0);
+      holder.updateMatrixWorld(true);
+      // boxing: a POW at each punch
+      if (st.pose === 'boxing') {
+        const beat = Math.floor((((st.phase / (Math.PI * 2)) % 1) + 1) % 1 * 4);
+        if (beat !== st.beat) {
+          st.beat = beat;
+          if (beat === 0 || beat === 2) {
+            FT.sfx.kit('punch');
+            // the jab is the lead (left) hand, the straight the right
+            Kit.people.handWorld(p, beat === 0 ? -1 : 1, tmp);
+            flyers.add('💥', tmp.x + 0.25 * st.scale * side, tmp.y, tmp.z + 0.6, rand(0.5, 1.2), rand(0.4, 1), 0.6 * st.scale, 0.45, 0, 0);
+          }
+        }
+      }
+      // the Y pose: ✌️ and stars float up from both hands, three little bursts
+      st.since += dt;
+      if (st.pose === 'peace' && st.bursts < 3 && st.since > 0.15 + st.bursts * 0.55) {
+        st.bursts++;
+        for (const side of [-1, 1]) {
+          Kit.people.handWorld(p, side, tmp);
+          flyers.add(Math.random() < 0.7 ? '✌️' : '⭐', tmp.x, tmp.y, tmp.z + 0.6, side * rand(0.3, 0.9), rand(1.6, 2.6), rand(0.45, 0.6) * st.scale, 1.1, rand(-1, 1), 0.15);
+        }
+      }
+      updateBall(dt);
+    }
+
+    // Teddy's jump shot: the ball rides up in his hands, leaves them at the top of the jump, drops through the hoop.
+    function updateBall(dt) {
+      if (hoop.visible) {
+        st.hoopT += dt;
+        const k = st.hoopT < 0.25 ? st.hoopT / 0.25 : st.hoopT > 2.2 ? Math.max(0, 1 - (st.hoopT - 2.2) / 0.25) : 1;
+        hoop.scale.setScalar(st.scale * (k < 1 ? k * (1.25 - 0.25 * k) : 1));
+        if (st.hoopT > 2.45) hoop.visible = false;
+      }
+      if (st.ballT < 0) return;
+      st.ballT += dt;
+      const s = st.scale, g = 9 * s;
+      ball.scale.setScalar(s);
+      hoop.updateMatrixWorld(true);
+      rimAt.set(0, RIM.y, RIM.z).applyMatrix4(hoop.matrixWorld);
+      if (st.ballT < 0.38) {
+        Kit.people.handWorld(p, -1, tmp);
+        Kit.people.handWorld(p, 1, tmp2);
+        ball.position.copy(tmp).add(tmp2).multiplyScalar(0.5);
+        ball.position.y += BALL_SIZE * s;
+        ball.position.z = rimAt.z;
+        ball.visible = true;
+        // aim: reach the rim centre (a ball-radius above it) SHOT_TIME seconds after release
+        ballV.set((rimAt.x - ball.position.x) / SHOT_TIME, (rimAt.y + BALL_SIZE * s * 0.5 - ball.position.y) / SHOT_TIME + 0.5 * g * SHOT_TIME, 0);
+      } else {
+        ballV.y -= g * dt;
+        ball.position.addScaledVector(ballV, dt);
+        ball.rotation.z -= 6 * dt;
+        if (!st.swished && st.ballT > 0.38 + SHOT_TIME) {
+          st.swished = true;
+          ballV.x *= 0.15; // the net catches it
+          ballV.y *= 0.5;
+          FT.sfx.kit('swish');
+          if (actor.onSwish) actor.onSwish(rimAt);
+        }
+        if (st.ballT > 2.3) {
+          ball.visible = false;
+          st.ballT = -1;
         }
       }
     }
-    // the Y pose: ✌️ and stars float up from both hands, three little bursts
-    st.since += dt;
-    if (st.pose === 'peace' && st.bursts < 3 && st.since > 0.15 + st.bursts * 0.55) {
-      st.bursts++;
-      for (const side of [-1, 1]) {
-        Kit.people.handWorld(p, side, tmp);
-        flyers.add(Math.random() < 0.7 ? '✌️' : '⭐', tmp.x, tmp.y, tmp.z + 0.6, side * rand(0.3, 0.9), rand(1.6, 2.6), rand(0.45, 0.6) * st.scale, 1.1, rand(-1, 1), 0.15);
-      }
-    }
-    updateBall(dt);
+
+    const actor = {
+      init, set, place, react, act, update,
+      onSwish: null,
+      home,
+      get entry() { return entry; },
+      get person() { return p; },
+      get mode() { return st.mode; },
+      get pose() { return st.pose; },
+      get root() { return holder; },
+      get scale() { return st.scale; },
+      // turn to face a direction (radians, as root.rotation.y), or null to face the camera again
+      set face(a) { st.face = a; },
+      set visible(v) { holder.visible = v; if (!v) { ball.visible = false; hoop.visible = false; st.ballT = -1; } },
+      get visible() { return holder.visible; },
+    };
+    return actor;
   }
 
-  // Teddy's jump shot: the ball rides up in his hands, leaves them at the top of the jump, drops through the hoop.
-  function updateBall(dt) {
-    if (hoop.visible) {
-      st.hoopT += dt;
-      const k = st.hoopT < 0.25 ? st.hoopT / 0.25 : st.hoopT > 2.2 ? Math.max(0, 1 - (st.hoopT - 2.2) / 0.25) : 1;
-      hoop.scale.setScalar(st.scale * (k < 1 ? k * (1.25 - 0.25 * k) : 1));
-      if (st.hoopT > 2.45) hoop.visible = false;
+  FT.makeActor = makeActor;
+  FT.chef = makeActor(1);
+})();
+
+</script>
+<script>
+/* Fruit Teddy — the buddy: the other brother comes to help as a second chef, like Metro Surfer's buddy.
+   Kit.roster.buddyFor(chef) picks him: Tommy for everyone, Teddy when Tommy is the chef. Call him with his button,
+   the T key or his card on the title screen; every call brings him, and calling again once he has handed over his
+   treat makes him say hi and hand over another. A visit is about 10 s:
+     run in from the right → hello signature (Tommy's Y, Teddy's boxing) → slice a fruit about every second with a
+     blade swipe from his side → toss you a treat halfway → goodbye signature (Tommy's Y, Teddy's jump shot) → run off.
+   While he's guarding (the first 9.6 s), dropped fruit and sliced zombie heads don't cost a heart (see game.js). */
+(function () {
+  'use strict';
+  const T = THREE;
+  const FT = (window.FT = window.FT || {});
+  const Kit = window.Kit;
+  const { rand, pick } = Kit.gfx;
+
+  const V = { hello: 0.4, giveAt: 4.3, throwAt: 4.65, byeAt: 8.2, guardUntil: 9.6 }; // seconds into his visit
+  const STRIKE_EVERY = 1.05, URGENT_EVERY = 0.35;
+  const TREATS = [['🍦', 'ICE CREAM'], ['💧', 'WATER'], ['🧃', 'JUICE BOX'], ['🍪', 'COOKIE'], ['🍉', 'WATERMELON'], ['🍌', 'BANANA']];
+
+  let api = null, actor = null, entry = null, offX = 20;
+  const b = { on: false, t: 0, x: 20, said: false, given: false, bye: false, nextStrike: 0, lastStrike: -9, hits: 0, blade: null };
+  const treat = { sprite: null, flyT: -1, holdT: 0, from: new T.Vector3(), to: new T.Vector3() };
+  const tmp = new T.Vector3();
+
+  function init(a) {
+    api = a;
+    actor = FT.makeActor(-1);
+    actor.init(a.scene, a.flyers);
+    actor.visible = false;
+    treat.sprite = new T.Sprite(new T.SpriteMaterial({ depthWrite: false, transparent: true }));
+    treat.sprite.visible = false;
+    treat.sprite.renderOrder = 7;
+    a.scene.add(treat.sprite);
+  }
+
+  // The buddy for this chef. Rebuilds him only when he changes.
+  function setFor(chefId) {
+    const id = Kit.roster.buddyFor(chefId);
+    if (entry && entry.id === id) return entry;
+    if (b.on) dismiss();
+    entry = Kit.roster.get(id);
+    actor.set(id, entry.buddyScale || 0.8);
+    const tag = Kit.gfx.nameTag(entry.name, entry.tag || '#ffb02e');
+    tag.position.y = 2.55;
+    actor.person.root.add(tag);
+    actor.visible = false;
+    return entry;
+  }
+
+  function place(v, portrait, reserve) {
+    actor.place(v, portrait, reserve);
+    offX = v.W / 2 + 1.2 * actor.scale; // just off the right edge
+    if (!b.on) b.x = offX;
+    actor.root.position.x = b.x;
+  }
+
+  // Every call brings him; once he has given his treat, another call makes him say hi and give one more.
+  function call() {
+    if (!b.on) return summon();
+    if (b.given || b.t >= V.guardUntil) {
+      Object.assign(b, { t: V.hello - 0.05, said: false, given: false, bye: false, nextStrike: V.hello + 0.5, lastStrike: -9 });
+      api.toast(`${entry.name}'S HERE!`);
     }
-    if (st.ballT < 0) return;
-    st.ballT += dt;
-    const s = st.scale, g = 9 * s;
-    ball.scale.setScalar(s);
-    hoop.updateMatrixWorld(true);
-    rimAt.set(0, RIM.y, RIM.z).applyMatrix4(hoop.matrixWorld);
-    if (st.ballT < 0.38) {
-      Kit.people.handWorld(p, -1, tmp);
-      Kit.people.handWorld(p, 1, tmp2);
-      ball.position.copy(tmp).add(tmp2).multiplyScalar(0.5);
-      ball.position.y += BALL_SIZE * s;
-      ball.position.z = rimAt.z;
-      ball.visible = true;
-      // aim: reach the rim centre (a ball-radius above it) SHOT_TIME seconds after release
-      ballV.set((rimAt.x - ball.position.x) / SHOT_TIME, (rimAt.y + BALL_SIZE * s * 0.5 - ball.position.y) / SHOT_TIME + 0.5 * g * SHOT_TIME, 0);
+    return 'again';
+  }
+
+  function summon() {
+    Object.assign(b, { on: true, t: 0, x: offX, said: false, given: false, bye: false, nextStrike: 0.9, lastStrike: -9 });
+    actor.visible = true;
+    actor.react('idle');
+    actor.root.position.x = b.x;
+    api.toast(`${entry.name}'S HERE!`);
+    FT.sfx.kit('powerup');
+    return 'summoned';
+  }
+
+  function dismiss() {
+    b.on = false;
+    actor.visible = false;
+    if (b.blade) endBlade();
+  }
+
+  // He starts leaving (the game ended): skip to the goodbye.
+  function leave() {
+    if (b.on && b.t < V.guardUntil) b.t = V.guardUntil;
+  }
+
+  const guarding = () => b.on && b.t < V.guardUntil;
+
+  // ---------------------------------------------------------------- helping: a blade swipe from his side
+
+  // The fruit that most needs saving: falling and low on the screen first, then whichever is lowest.
+  function pickTarget() {
+    const v = api.view, bottom = -v.H / 2;
+    let best = null, bestScore = Infinity;
+    for (const it of api.items()) {
+      if (it.kind !== 'fruit' || it.age < 0.15) continue;
+      if (it.y < bottom + it.r * 0.6 || it.y > v.H / 2 - it.r || Math.abs(it.x) > v.W / 2 - it.r * 0.5) continue;
+      const score = it.y + (it.vy > 0 ? v.H : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = it;
+      }
+    }
+    return best;
+  }
+
+  function strike(it) {
+    b.lastStrike = b.t;
+    b.hits++;
+    // the blade sweeps across the fruit from his side (right to left), tracking it so it can't miss
+    const a = rand(-0.55, 0.55), L = it.r * 2.2;
+    b.blade = { it, k: 0, dx: Math.cos(a) * L, dy: Math.sin(a) * L, x: it.x, y: it.y, stroke: null };
+    if (entry.id === 'teddy') {
+      actor.act(b.hits % 2 ? 'jab' : 'straight', 0.3);
+      FT.sfx.kit('punch');
+      api.flyers.add('💥', it.x, it.y, 1, rand(-1, 1), rand(0.5, 1.5), 1.1, 0.45, 0, 0);
+    } else actor.act('give', 0.3);
+  }
+
+  function updateBlade(dt) {
+    const bl = b.blade;
+    if (!bl) return;
+    if (!bl.it.dead && api.items().includes(bl.it)) {
+      bl.x = bl.it.x;
+      bl.y = bl.it.y;
+    }
+    bl.k = Math.min(1, bl.k + dt / 0.12);
+    const u = 1 - 2 * bl.k; // +1 (his side) → -1
+    const p = api.toScreen(bl.x + bl.dx * u, bl.y + bl.dy * u);
+    if (!bl.stroke) bl.stroke = api.blade.start('buddy', p.x, p.y, { color: entry.tag || '#ffb02e', helper: true, width: 16 });
+    else api.blade.move(bl.stroke, p.x, p.y);
+    if (bl.k >= 1) endBlade();
+  }
+  function endBlade() {
+    api.blade.end('buddy');
+    b.blade = null;
+  }
+
+  // ---------------------------------------------------------------- the treat
+
+  function giveTreat() {
+    const [emoji, label] = pick(TREATS);
+    treat.sprite.material.map = Kit.gfx.emojiTexture(emoji);
+    treat.sprite.material.needsUpdate = true;
+    actor.root.updateMatrixWorld(true);
+    Kit.people.handWorld(actor.person, 1, treat.from);
+    treat.from.z += 0.5;
+    api.scene.add(treat.sprite);
+    treat.sprite.position.copy(treat.from);
+    treat.sprite.scale.setScalar(0.9);
+    treat.sprite.visible = true;
+    treat.flyT = 0;
+    treat.holdT = 0;
+    api.toast(`${emoji} ${label} FROM ${entry.name}!`);
+    FT.sfx.kit('coin', 6);
+  }
+
+  function updateTreat(dt) {
+    const chef = FT.chef;
+    if (treat.flyT >= 0) {
+      // arc from his hand into the chef's left hand (the one on the middle side of the screen: the chef faces us)
+      treat.flyT += dt / 0.6;
+      chef.root.updateMatrixWorld(true);
+      Kit.people.handWorld(chef.person, -1, treat.to);
+      treat.to.z += 0.5;
+      const k = Math.min(1, treat.flyT);
+      treat.sprite.position.lerpVectors(treat.from, treat.to, k);
+      treat.sprite.position.y += Math.sin(k * Math.PI) * 2.2;
+      treat.sprite.material.rotation = k * Math.PI * 2;
+      if (k >= 1) {
+        treat.flyT = -1;
+        treat.holdT = 9;
+        treat.sprite.material.rotation = 0;
+        chef.person.armL.add(treat.sprite);
+        treat.sprite.position.set(0, -0.82, -0.3); // camera side of the hand (the chef faces the camera)
+        treat.sprite.scale.setScalar(1.0);
+        chef.react('cheer');
+      }
+    } else if (treat.holdT > 0) {
+      treat.holdT -= dt;
+      if (treat.holdT <= 0) dropTreat();
+    }
+  }
+
+  function dropTreat() {
+    treat.flyT = -1;
+    treat.holdT = 0;
+    treat.sprite.visible = false;
+    if (treat.sprite.parent) treat.sprite.parent.remove(treat.sprite);
+  }
+
+  // ---------------------------------------------------------------- the visit
+
+  function update(dt) {
+    updateTreat(dt);
+    updateBlade(dt);
+    if (!b.on) return;
+    b.t += dt;
+    const t = b.t, s = actor.scale, leaving = t >= V.guardUntil;
+    const target = leaving ? offX : actor.home.x;
+    const step = 7 * s * dt; // running speed
+    b.x += Math.max(-step, Math.min(step, target - b.x));
+    const running = Math.abs(target - b.x) > 0.02 * s;
+    actor.root.position.x = b.x;
+    if (running) {
+      actor.face = target < b.x ? Math.PI / 2 : -Math.PI / 2; // face where he's running
+      actor.act('run', 0.2, 0, true);
     } else {
-      ballV.y -= g * dt;
-      ball.position.addScaledVector(ballV, dt);
-      ball.rotation.z -= 6 * dt;
-      if (!st.swished && st.ballT > 0.38 + SHOT_TIME) {
-        st.swished = true;
-        ballV.x *= 0.15; // the net catches it
-        ballV.y *= 0.5;
-        FT.sfx.kit('swish');
-        if (FT.chef.onSwish) FT.chef.onSwish(rimAt);
-      }
-      if (st.ballT > 2.3) {
-        ball.visible = false;
-        st.ballT = -1;
+      actor.face = null;
+      if (!leaving) {
+        if (!b.said && t > V.hello) {
+          b.said = true;
+          actor.react('hello');
+        }
+        if (!b.given && t > V.giveAt) actor.act('give', 0.6, 0, true);
+        if (!b.given && t > V.throwAt) {
+          b.given = true;
+          giveTreat();
+        }
+        if (!b.bye && t > V.byeAt) {
+          b.bye = true;
+          actor.react('goodbye');
+        }
+        // helping: a fruit about every second, sooner if one is about to drop
+        const it = !b.blade && (t < V.giveAt - 0.1 || t > V.throwAt + 0.3) ? pickTarget() : null;
+        if (it) {
+          const urgent = it.vy < 0 && it.y < -api.view.H * 0.25;
+          if (t >= b.nextStrike || (urgent && t - b.lastStrike > URGENT_EVERY)) {
+            strike(it);
+            b.nextStrike = t + STRIKE_EVERY;
+          }
+        }
       }
     }
+    if (leaving && !running) dismiss();
+    // look at the fruit he's after, else the middle
+    const look = b.blade ? Math.max(-1, Math.min(1, (b.blade.x - b.x) / (api.view.W * 0.6))) : -0.4;
+    actor.update(dt, look);
   }
 
-  FT.chef = {
-    init, set, place, react, update,
+  FT.buddy = {
+    init, setFor, place, call, summon, dismiss, leave, update, dropTreat, guarding,
     get entry() { return entry; },
-    get person() { return p; },
-    get mode() { return st.mode; },
-    get pose() { return st.pose; },
-    get root() { return holder; },
+    get actor() { return actor; },
+    get on() { return b.on; },
+    get t() { return b.t; },
+    get given() { return b.given; },
+    get holding() { return treat.holdT > 0 || treat.flyT >= 0; },
+    // 1 → 0 over the guarding time, for the HUD bar
+    get guardLeft() { return guarding() ? 1 - b.t / V.guardUntil : 0; },
+    GUARD_UNTIL: V.guardUntil,
   };
 })();
 
@@ -2397,6 +2789,7 @@
   const GRACE = 12; // for the first seconds a dropped fruit only shows a hint, so little ones can find their feet
   const ZOMBIE_FROM = 25, GOLD_FROM = 15, GOLD_POINTS = 5, BUBBLE_POINTS = 3;
   const FREEZE_TIME = 4.5, FREEZE_SCALE = 0.12;
+  const CARD_POINTS = 5, MAX_CARDS = 2; // calling the buddy also tosses up a character card to slice
   const BLADE = { teddy: '#4aa8ff', tommy: '#3fe0b0', zombie: '#a6ff5c' };
   const PITCH = { watermelon: 0.75, pineapple: 0.85, banana: 1.0, apple: 1.1, orange: 1.0, strawberry: 1.3 };
 
@@ -2416,7 +2809,7 @@
 
   let renderer, scene, camera, wall, bunting, particles, splats, flyers, overlay;
   const view = { W: MIN_W, H: MIN_H, D: 20, w: 1, h: 1 }; // world size of the z = 0 plane, camera distance, CSS px
-  const items = [], halves = [], trails = [], chains = [];
+  const items = [], halves = [], trails = [], chains = [], batted = [];
   const strokes = new Map(); // pointerId -> stroke being drawn
   const G = {
     state: 'loading', t: 0, clock: 0, score: 0, lives: LIVES, sliced: 0, bestCombo: 0, best: 0, newBest: false,
@@ -2575,6 +2968,10 @@
     } else if (kind === 'zombie') {
       obj = FT.fruits.zombie();
       r = 0.95;
+    } else if (kind === 'card') {
+      type = FT.fruits.card(o.entry, portraits[o.entry.id]);
+      obj = FT.fruits.whole(type, false);
+      r = FT.fruits.defs[type].r;
     } else {
       face = bubbleFace();
       obj = FT.fruits.bubble(face.tex, face.name);
@@ -2627,6 +3024,8 @@
             particles.emit(it.x + rand(-0.8, 0.8), it.y + rand(-0.8, 0.8), 0.9, 0, rand(0.2, 0.8), 0, srgb('#fff3a0'), rand(0.12, 0.26), 0.5, 0, 1);
           }
         }
+      } else if (it.kind === 'card') {
+        it.obj.rotation.set(Math.sin(it.age * 1.7) * 0.25, Math.sin(it.age * 2.1) * 1.0, Math.sin(it.age * 2.6) * 0.3); // rocks, face mostly forward
       } else if (it.kind === 'zombie') {
         it.obj.rotation.set(0, Math.sin(it.age * 2.3) * 0.35, Math.sin(it.age * 3.1) * 0.22);
         const halo = it.obj.userData.halo;
@@ -2660,6 +3059,7 @@
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
       if (!it || it.age < 0.05) continue;
+      if (s.helper && it.kind !== 'fruit') continue; // the buddy's blade only cuts fruit
       const pad = it.kind === 'zombie' ? ZOMBIE_PAD : HIT_PAD;
       if (segDist(it.x, it.y, ax, ay, bx, by) <= it.r * pad) hit(it, ux, uy, s);
     }
@@ -2670,6 +3070,7 @@
     const scr = toScreen(it.x, it.y);
     if (it.kind === 'zombie') return hitZombie(it, scr);
     if (it.kind === 'bubble') return hitBubble(it, scr);
+    if (it.kind === 'card') return hitCard(it, ux, uy, scr);
     split(it, ux, uy);
     juice(it, ux, uy);
     S.slice(PITCH[it.type] || 1);
@@ -2763,6 +3164,7 @@
   // ---------------------------------------------------------------- zombie heads, freeze bubbles, lives, score
 
   function hitZombie(it, scr) {
+    if (G.state === 'play' && FT.buddy.guarding()) return batAway(it);
     S.poof();
     S.kit('groan');
     const green = srgb('#8fe36a'), dark = srgb('#4f8a3a');
@@ -2779,6 +3181,78 @@
       toast('🧟 OOPS, A ZOMBIE!', 'warn');
       loseLife();
     }
+  }
+
+  // With the buddy guarding, a sliced zombie head gets batted off the screen instead: no scare, no lost heart.
+  function batAway(it) {
+    S.kit('punch');
+    S.poof();
+    scene.add(it.obj);
+    const dir = it.x < FT.buddy.actor.root.position.x ? -1 : 1;
+    batted.push({ obj: it.obj, vx: dir * rand(9, 12), vy: rand(7, 10), spin: rand(8, 12) * dir, g: gravity() });
+    for (let i = 0; i < 6; i++) flyers.add(i % 2 ? '⭐' : '💥', it.x, it.y, 1, rand(-3, 3), rand(1, 4), rand(0.6, 0.9), 0.7, rand(-3, 3), 0.4);
+    G.shake = 0.2;
+    saved();
+  }
+
+  function saved() {
+    FT.buddy.actor.react('cheer');
+    FT.chef.react('cheer');
+    if (G.clock - (G.savedAt || -9) > 1.2) {
+      G.savedAt = G.clock;
+      toast(`${FT.buddy.entry.name} SAVED YOU!`);
+      S.heart();
+    }
+  }
+
+  function updateBatted(dt) {
+    for (let i = batted.length - 1; i >= 0; i--) {
+      const z = batted[i];
+      z.vy -= z.g * dt;
+      z.obj.position.x += z.vx * dt;
+      z.obj.position.y += z.vy * dt;
+      z.obj.rotation.z += z.spin * dt;
+      if (Math.abs(z.obj.position.x) > view.W / 2 + 3 || z.obj.position.y < -view.H / 2 - 3) {
+        scene.remove(z.obj);
+        batted.splice(i, 1);
+      }
+    }
+  }
+
+  function hitCard(it, ux, uy, scr) {
+    const def = FT.fruits.defs[it.type];
+    split(it, ux, uy);
+    const cols = ['#ff3d7f', '#ffd400', '#18d4ff', '#7ed957', '#b45cff', '#ffffff'].map(srgb);
+    for (let i = 0; i < 40; i++) {
+      particles.emit(it.x, it.y, 0.6, rand(-6, 6), rand(-2, 8), 0, cols[i % cols.length], rand(0.18, 0.34), rand(0.7, 1.2), 0.7, 1.2);
+    }
+    S.slice(1.4);
+    FT.chef.react('cheer');
+    if (def.entryId === 'zombie') {
+      // the zombie card: a groan and a "BOO!" for fun, never a lost heart
+      S.kit('groan');
+      G.booAt = scr;
+      G.booT = 2.45;
+    } else S.kit('coin', 10);
+    if (G.state !== 'play') return;
+    overlay.text('+' + CARD_POINTS, scr.x, scr.y - 10, { color: '#ffd400', size: 44 });
+    toast(`🃏 ${def.name} CARD! +${CARD_POINTS}`);
+    addScore(CARD_POINTS);
+  }
+
+  // Calling the buddy (button, T, his card): he comes, and a random character card flies up to slice.
+  function callBuddy() {
+    if (G.state === 'paused' || G.state === 'loading') return null;
+    S.init();
+    const r = FT.buddy.call();
+    tossCard();
+    return r;
+  }
+
+  function tossCard(id) {
+    if (items.filter((it) => it.kind === 'card').length >= MAX_CARDS) return null;
+    const entry = Kit.roster.get(id) || pick(Kit.roster.list);
+    return toss('card', { entry, apex: rand(view.H * 0.05, view.H * 0.25), x: rand(-view.W * 0.3, view.W * 0.3) });
   }
 
   function hitBubble(it, scr) {
@@ -2805,6 +3279,11 @@
   }
 
   function missFruit(it) {
+    if (FT.buddy.guarding()) {
+      // he dives for it: no heart lost
+      overlay.text('SAVED!', toScreen(it.x, 0).x, view.h - 70, { color: '#7ed957', size: 30 });
+      return saved();
+    }
     S.miss();
     FT.chef.react('miss');
     if (G.t < GRACE) {
@@ -2921,6 +3400,8 @@
       h.mats.forEach((m) => m.dispose());
     });
     halves.length = 0;
+    batted.forEach((z) => scene.remove(z.obj));
+    batted.length = 0;
     chains.length = 0;
     G.queue.length = 0;
     particles.clear();
@@ -2951,6 +3432,7 @@
     G.endT = 1.6;
     G.queue.length = 0;
     FT.chef.react('over');
+    FT.buddy.leave();
     S.music('over');
   }
 
@@ -3034,8 +3516,10 @@
   function setChef(id, react) {
     const e = Kit.roster.get(id) ? id : 'teddy';
     G.chefId = e;
+    FT.buddy.dropTreat(); // it was in the old chef's hand
     FT.chef.set(e);
     FT.chef.place(atDepth(CHEF_Z), view.W < view.H * 0.8);
+    setBuddy(e);
     store.set('chef', e);
     if (ui.picker) {
       ui.picker.querySelectorAll('.avatar').forEach((b) => b.setAttribute('aria-checked', b.dataset.id === e ? 'true' : 'false'));
@@ -3043,6 +3527,29 @@
       ui.bestTitle.textContent = bestFor(e);
     }
     if (react) FT.chef.react('hello');
+  }
+
+  // The buddy who comes for this chef: rebuild him and relabel his button, HUD row and title card.
+  function setBuddy(chefId) {
+    const b = FT.buddy.setFor(chefId);
+    placeBuddy();
+    const nice = b.name[0] + b.name.slice(1).toLowerCase();
+    ui.buddyFace.src = ui.pwBuddyFace.src = portraits[b.id] || '';
+    ui.buddyName.textContent = b.name;
+    ui.buddyBtn.title = `Call ${nice} (T)`;
+    ui.buddyKey.textContent = nice;
+    const card = $('buddyCard');
+    if (card) {
+      card.querySelector('img').src = portraits[b.id] || '';
+      card.querySelector('.nm').textContent = b.name;
+    }
+  }
+
+  // The buddy stands bottom-right, left of his button.
+  function placeBuddy() {
+    const v = atDepth(CHEF_Z), btn = ui.buddyBtn.getBoundingClientRect();
+    const reservePx = btn.width ? view.w - btn.left + 6 : 110;
+    FT.buddy.place(v, view.W < view.H * 0.8, (reservePx / view.w) * v.W);
   }
 
   function buildPicker() {
@@ -3063,6 +3570,19 @@
       ui.picker.appendChild(b);
       if (c.id === 'tommy') ui.picker.appendChild(Object.assign(document.createElement('i'), { className: 'brk' }));
     }
+    // the buddy card: tap it and he comes right now (and a card to slice flies up)
+    const bd = FT.buddy.entry;
+    const card = document.createElement('button');
+    card.className = 'avatar buddy';
+    card.id = 'buddyCard';
+    card.title = 'Call your buddy (T)';
+    card.innerHTML = `<img alt="" src="${portraits[bd.id] || ''}"><span class="nm">${bd.name}</span><span class="bs">BUDDY · TAP ME!</span>`;
+    card.addEventListener('click', () => {
+      S.kit('click');
+      callBuddy();
+      card.blur();
+    });
+    ui.picker.appendChild(card);
     ui.bestName.textContent = Kit.roster.get(G.chefId).name;
     ui.bestTitle.textContent = bestFor(G.chefId);
   }
@@ -3096,8 +3616,8 @@
     return BLADE[G.chefId] || '#ffd400';
   }
 
-  function strokeStart(id, cx, cy) {
-    const s = { id, pts: [], last: null, color: bladeColor(), width: 20, chain: null, ended: false, whoosh: -1 };
+  function strokeStart(id, cx, cy, o = {}) {
+    const s = { id, pts: [], last: null, color: o.color || bladeColor(), width: o.width || 20, helper: !!o.helper, chain: null, ended: false, whoosh: -1 };
     strokes.set(id, s);
     trails.push(s);
     strokeMove(s, cx, cy);
@@ -3111,7 +3631,7 @@
     if (s.last && G.state !== 'paused') {
       sliceSegment(s, s.last.x, s.last.y, w.x, w.y);
       // a whoosh for a quick swipe
-      const old = s.pts.find((p) => G.clock - p.t < 0.09);
+      const old = s.helper ? null : s.pts.find((p) => G.clock - p.t < 0.09);
       if (old && Math.hypot(cx - old.x, cy - old.y) > view.w * 0.08 && G.clock - s.whoosh > 0.3) {
         s.whoosh = G.clock;
         S.kit('swipe');
@@ -3152,6 +3672,7 @@
     window.addEventListener('keydown', (e) => {
       const k = e.key;
       if (k === 'm' || k === 'M') toggleMute();
+      else if (k === 't' || k === 'T') callBuddy();
       else if (k === 'p' || k === 'P' || k === 'Escape') setPaused(G.state === 'play');
       else if ((k === ' ' || k === 'Enter') && (G.state === 'title' || G.state === 'over')) {
         if (document.activeElement && document.activeElement.classList.contains('avatar') && k === 'Enter') return;
@@ -3170,6 +3691,10 @@
     $('quitBtn').addEventListener('click', () => { clearField(); goTitle(); });
     $('pauseBtn').addEventListener('click', () => setPaused(true));
     $('muteBtn').addEventListener('click', toggleMute);
+    ui.buddyBtn.addEventListener('click', (e) => {
+      callBuddy();
+      e.currentTarget.blur();
+    });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         if (G.autoPause) setPaused(true);
@@ -3203,6 +3728,7 @@
     overlay.resize(w, h, dpr);
     layoutBackdrop();
     FT.chef.place(atDepth(CHEF_Z), W < H * 0.8);
+    if (FT.buddy.entry) placeBuddy();
   }
 
   function tick(dt) {
@@ -3231,6 +3757,12 @@
     const cx = FT.chef.root.position.x;
     for (const it of items) if (it.y > best) { best = it.y; look = clamp((it.x - cx) / (view.W * 0.6), -1, 1); }
     FT.chef.update(dt, look);
+    FT.buddy.update(dt);
+    updateBatted(gdt);
+    const guard = FT.buddy.guardLeft;
+    ui.pwBuddy.classList.toggle('on', guard > 0);
+    ui.buddyBtn.classList.toggle('guarding', guard > 0);
+    if (guard > 0) ui.pwBuddyFill.style.transform = `scaleX(${guard})`;
 
     if (G.scareT > 0) {
       G.scareT -= dt;
@@ -3321,15 +3853,18 @@
     // zombie heads are the kit's zombie, head only, turned to face the camera
     const zLook = (Kit.roster.get('zombie') || {}).look;
     if (zLook) {
+      let proto = null; // built once; every toss is a clone sharing its geometry and materials
       FT.fruits.setZombieMaker(() => {
-        const p = Kit.people.build(zLook), head = p.head;
-        head.parent.remove(head);
-        head.position.set(0, -0.05, 0);
-        head.rotation.set(0, Math.PI, 0);
-        const g = new T.Group();
-        head.scale.setScalar(2.9);
-        g.add(head);
-        return g;
+        if (!proto) {
+          const head = Kit.people.build(zLook).head;
+          head.parent.remove(head);
+          head.position.set(0, -0.05, 0);
+          head.rotation.set(0, Math.PI, 0);
+          head.scale.setScalar(2.9);
+          proto = new T.Group();
+          proto.add(head);
+        }
+        return proto.clone();
       });
     }
     buildBackdrop();
@@ -3350,6 +3885,8 @@
       muteBtn: $('muteBtn'), picker: $('picker'), bestName: $('bestName'), bestTitle: $('bestTitle'),
       ovScore: $('ovScore'), ovSliced: $('ovSliced'), ovCombo: $('ovCombo'), ovBest: $('ovBest'), ovBestLabel: $('ovBestLabel'),
       ovTitle: $('ovTitle'), newBest: $('newBest'),
+      buddyBtn: $('buddyBtn'), buddyFace: $('buddyFace'), buddyName: $('buddyName'), buddyKey: $('buddyKeyName'),
+      pwBuddy: $('pwBuddy'), pwBuddyFace: $('pwBuddyFace'), pwBuddyFill: $('pwBuddyFill'),
     });
     ui.muteBtn.textContent = S.isMuted() ? '🔇' : '🔊';
     try {
@@ -3358,6 +3895,11 @@
       portraits = {};
     }
     faceTex = { teddy: makeFace('teddy'), tommy: makeFace('tommy') };
+    FT.buddy.init({
+      scene, flyers, view, toScreen, toast, items: () => items,
+      blade: { start: strokeStart, move: strokeMove, end: strokeEnd },
+    });
+    FT.buddy.actor.onSwish = FT.chef.onSwish;
     resize();
     setChef(store.get('chef', 'teddy'));
     buildPicker();
@@ -3426,6 +3968,13 @@
       return { kind, type: it.type, x: Math.round(p.x), y: Math.round(p.y) };
     },
     chef(kind) { return FT.chef.react(kind); },
+    // the buddy: call him like the button / T does (also tosses a card); buddyInfo() reports his visit
+    buddy() { return callBuddy(); },
+    buddyInfo() {
+      const r = FT.buddy.actor.root.position;
+      return { id: FT.buddy.entry.id, on: FT.buddy.on, t: +FT.buddy.t.toFixed(2), guarding: FT.buddy.guarding(), given: FT.buddy.given, holding: FT.buddy.holding, pose: FT.buddy.actor.pose, x: +r.x.toFixed(2), home: +FT.buddy.actor.home.x.toFixed(2), cards: items.filter((it) => it.kind === 'card').length };
+    },
+    card(id) { const it = tossCard(id); return it ? it.type : null; },
     setChef(id) { setChef(id, true); return G.chefId; },
     pause(on = true) { setPaused(on); return G.state; },
     // the Browser pane hides the page between test steps; this stops that from pausing the game

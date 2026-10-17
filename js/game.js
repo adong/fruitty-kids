@@ -22,6 +22,7 @@
   const GRACE = 12; // for the first seconds a dropped fruit only shows a hint, so little ones can find their feet
   const ZOMBIE_FROM = 25, GOLD_FROM = 15, GOLD_POINTS = 5, BUBBLE_POINTS = 3;
   const FREEZE_TIME = 4.5, FREEZE_SCALE = 0.12;
+  const CARD_POINTS = 5, MAX_CARDS = 2; // calling the buddy also tosses up a character card to slice
   const BLADE = { teddy: '#4aa8ff', tommy: '#3fe0b0', zombie: '#a6ff5c' };
   const PITCH = { watermelon: 0.75, pineapple: 0.85, banana: 1.0, apple: 1.1, orange: 1.0, strawberry: 1.3 };
 
@@ -41,7 +42,7 @@
 
   let renderer, scene, camera, wall, bunting, particles, splats, flyers, overlay;
   const view = { W: MIN_W, H: MIN_H, D: 20, w: 1, h: 1 }; // world size of the z = 0 plane, camera distance, CSS px
-  const items = [], halves = [], trails = [], chains = [];
+  const items = [], halves = [], trails = [], chains = [], batted = [];
   const strokes = new Map(); // pointerId -> stroke being drawn
   const G = {
     state: 'loading', t: 0, clock: 0, score: 0, lives: LIVES, sliced: 0, bestCombo: 0, best: 0, newBest: false,
@@ -200,6 +201,10 @@
     } else if (kind === 'zombie') {
       obj = FT.fruits.zombie();
       r = 0.95;
+    } else if (kind === 'card') {
+      type = FT.fruits.card(o.entry, portraits[o.entry.id]);
+      obj = FT.fruits.whole(type, false);
+      r = FT.fruits.defs[type].r;
     } else {
       face = bubbleFace();
       obj = FT.fruits.bubble(face.tex, face.name);
@@ -252,6 +257,8 @@
             particles.emit(it.x + rand(-0.8, 0.8), it.y + rand(-0.8, 0.8), 0.9, 0, rand(0.2, 0.8), 0, srgb('#fff3a0'), rand(0.12, 0.26), 0.5, 0, 1);
           }
         }
+      } else if (it.kind === 'card') {
+        it.obj.rotation.set(Math.sin(it.age * 1.7) * 0.25, Math.sin(it.age * 2.1) * 1.0, Math.sin(it.age * 2.6) * 0.3); // rocks, face mostly forward
       } else if (it.kind === 'zombie') {
         it.obj.rotation.set(0, Math.sin(it.age * 2.3) * 0.35, Math.sin(it.age * 3.1) * 0.22);
         const halo = it.obj.userData.halo;
@@ -285,6 +292,7 @@
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
       if (!it || it.age < 0.05) continue;
+      if (s.helper && it.kind !== 'fruit') continue; // the buddy's blade only cuts fruit
       const pad = it.kind === 'zombie' ? ZOMBIE_PAD : HIT_PAD;
       if (segDist(it.x, it.y, ax, ay, bx, by) <= it.r * pad) hit(it, ux, uy, s);
     }
@@ -295,6 +303,7 @@
     const scr = toScreen(it.x, it.y);
     if (it.kind === 'zombie') return hitZombie(it, scr);
     if (it.kind === 'bubble') return hitBubble(it, scr);
+    if (it.kind === 'card') return hitCard(it, ux, uy, scr);
     split(it, ux, uy);
     juice(it, ux, uy);
     S.slice(PITCH[it.type] || 1);
@@ -388,6 +397,7 @@
   // ---------------------------------------------------------------- zombie heads, freeze bubbles, lives, score
 
   function hitZombie(it, scr) {
+    if (G.state === 'play' && FT.buddy.guarding()) return batAway(it);
     S.poof();
     S.kit('groan');
     const green = srgb('#8fe36a'), dark = srgb('#4f8a3a');
@@ -404,6 +414,78 @@
       toast('🧟 OOPS, A ZOMBIE!', 'warn');
       loseLife();
     }
+  }
+
+  // With the buddy guarding, a sliced zombie head gets batted off the screen instead: no scare, no lost heart.
+  function batAway(it) {
+    S.kit('punch');
+    S.poof();
+    scene.add(it.obj);
+    const dir = it.x < FT.buddy.actor.root.position.x ? -1 : 1;
+    batted.push({ obj: it.obj, vx: dir * rand(9, 12), vy: rand(7, 10), spin: rand(8, 12) * dir, g: gravity() });
+    for (let i = 0; i < 6; i++) flyers.add(i % 2 ? '⭐' : '💥', it.x, it.y, 1, rand(-3, 3), rand(1, 4), rand(0.6, 0.9), 0.7, rand(-3, 3), 0.4);
+    G.shake = 0.2;
+    saved();
+  }
+
+  function saved() {
+    FT.buddy.actor.react('cheer');
+    FT.chef.react('cheer');
+    if (G.clock - (G.savedAt || -9) > 1.2) {
+      G.savedAt = G.clock;
+      toast(`${FT.buddy.entry.name} SAVED YOU!`);
+      S.heart();
+    }
+  }
+
+  function updateBatted(dt) {
+    for (let i = batted.length - 1; i >= 0; i--) {
+      const z = batted[i];
+      z.vy -= z.g * dt;
+      z.obj.position.x += z.vx * dt;
+      z.obj.position.y += z.vy * dt;
+      z.obj.rotation.z += z.spin * dt;
+      if (Math.abs(z.obj.position.x) > view.W / 2 + 3 || z.obj.position.y < -view.H / 2 - 3) {
+        scene.remove(z.obj);
+        batted.splice(i, 1);
+      }
+    }
+  }
+
+  function hitCard(it, ux, uy, scr) {
+    const def = FT.fruits.defs[it.type];
+    split(it, ux, uy);
+    const cols = ['#ff3d7f', '#ffd400', '#18d4ff', '#7ed957', '#b45cff', '#ffffff'].map(srgb);
+    for (let i = 0; i < 40; i++) {
+      particles.emit(it.x, it.y, 0.6, rand(-6, 6), rand(-2, 8), 0, cols[i % cols.length], rand(0.18, 0.34), rand(0.7, 1.2), 0.7, 1.2);
+    }
+    S.slice(1.4);
+    FT.chef.react('cheer');
+    if (def.entryId === 'zombie') {
+      // the zombie card: a groan and a "BOO!" for fun, never a lost heart
+      S.kit('groan');
+      G.booAt = scr;
+      G.booT = 2.45;
+    } else S.kit('coin', 10);
+    if (G.state !== 'play') return;
+    overlay.text('+' + CARD_POINTS, scr.x, scr.y - 10, { color: '#ffd400', size: 44 });
+    toast(`🃏 ${def.name} CARD! +${CARD_POINTS}`);
+    addScore(CARD_POINTS);
+  }
+
+  // Calling the buddy (button, T, his card): he comes, and a random character card flies up to slice.
+  function callBuddy() {
+    if (G.state === 'paused' || G.state === 'loading') return null;
+    S.init();
+    const r = FT.buddy.call();
+    tossCard();
+    return r;
+  }
+
+  function tossCard(id) {
+    if (items.filter((it) => it.kind === 'card').length >= MAX_CARDS) return null;
+    const entry = Kit.roster.get(id) || pick(Kit.roster.list);
+    return toss('card', { entry, apex: rand(view.H * 0.05, view.H * 0.25), x: rand(-view.W * 0.3, view.W * 0.3) });
   }
 
   function hitBubble(it, scr) {
@@ -430,6 +512,11 @@
   }
 
   function missFruit(it) {
+    if (FT.buddy.guarding()) {
+      // he dives for it: no heart lost
+      overlay.text('SAVED!', toScreen(it.x, 0).x, view.h - 70, { color: '#7ed957', size: 30 });
+      return saved();
+    }
     S.miss();
     FT.chef.react('miss');
     if (G.t < GRACE) {
@@ -546,6 +633,8 @@
       h.mats.forEach((m) => m.dispose());
     });
     halves.length = 0;
+    batted.forEach((z) => scene.remove(z.obj));
+    batted.length = 0;
     chains.length = 0;
     G.queue.length = 0;
     particles.clear();
@@ -576,6 +665,7 @@
     G.endT = 1.6;
     G.queue.length = 0;
     FT.chef.react('over');
+    FT.buddy.leave();
     S.music('over');
   }
 
@@ -659,8 +749,10 @@
   function setChef(id, react) {
     const e = Kit.roster.get(id) ? id : 'teddy';
     G.chefId = e;
+    FT.buddy.dropTreat(); // it was in the old chef's hand
     FT.chef.set(e);
     FT.chef.place(atDepth(CHEF_Z), view.W < view.H * 0.8);
+    setBuddy(e);
     store.set('chef', e);
     if (ui.picker) {
       ui.picker.querySelectorAll('.avatar').forEach((b) => b.setAttribute('aria-checked', b.dataset.id === e ? 'true' : 'false'));
@@ -668,6 +760,29 @@
       ui.bestTitle.textContent = bestFor(e);
     }
     if (react) FT.chef.react('hello');
+  }
+
+  // The buddy who comes for this chef: rebuild him and relabel his button, HUD row and title card.
+  function setBuddy(chefId) {
+    const b = FT.buddy.setFor(chefId);
+    placeBuddy();
+    const nice = b.name[0] + b.name.slice(1).toLowerCase();
+    ui.buddyFace.src = ui.pwBuddyFace.src = portraits[b.id] || '';
+    ui.buddyName.textContent = b.name;
+    ui.buddyBtn.title = `Call ${nice} (T)`;
+    ui.buddyKey.textContent = nice;
+    const card = $('buddyCard');
+    if (card) {
+      card.querySelector('img').src = portraits[b.id] || '';
+      card.querySelector('.nm').textContent = b.name;
+    }
+  }
+
+  // The buddy stands bottom-right, left of his button.
+  function placeBuddy() {
+    const v = atDepth(CHEF_Z), btn = ui.buddyBtn.getBoundingClientRect();
+    const reservePx = btn.width ? view.w - btn.left + 6 : 110;
+    FT.buddy.place(v, view.W < view.H * 0.8, (reservePx / view.w) * v.W);
   }
 
   function buildPicker() {
@@ -688,6 +803,19 @@
       ui.picker.appendChild(b);
       if (c.id === 'tommy') ui.picker.appendChild(Object.assign(document.createElement('i'), { className: 'brk' }));
     }
+    // the buddy card: tap it and he comes right now (and a card to slice flies up)
+    const bd = FT.buddy.entry;
+    const card = document.createElement('button');
+    card.className = 'avatar buddy';
+    card.id = 'buddyCard';
+    card.title = 'Call your buddy (T)';
+    card.innerHTML = `<img alt="" src="${portraits[bd.id] || ''}"><span class="nm">${bd.name}</span><span class="bs">BUDDY · TAP ME!</span>`;
+    card.addEventListener('click', () => {
+      S.kit('click');
+      callBuddy();
+      card.blur();
+    });
+    ui.picker.appendChild(card);
     ui.bestName.textContent = Kit.roster.get(G.chefId).name;
     ui.bestTitle.textContent = bestFor(G.chefId);
   }
@@ -721,8 +849,8 @@
     return BLADE[G.chefId] || '#ffd400';
   }
 
-  function strokeStart(id, cx, cy) {
-    const s = { id, pts: [], last: null, color: bladeColor(), width: 20, chain: null, ended: false, whoosh: -1 };
+  function strokeStart(id, cx, cy, o = {}) {
+    const s = { id, pts: [], last: null, color: o.color || bladeColor(), width: o.width || 20, helper: !!o.helper, chain: null, ended: false, whoosh: -1 };
     strokes.set(id, s);
     trails.push(s);
     strokeMove(s, cx, cy);
@@ -736,7 +864,7 @@
     if (s.last && G.state !== 'paused') {
       sliceSegment(s, s.last.x, s.last.y, w.x, w.y);
       // a whoosh for a quick swipe
-      const old = s.pts.find((p) => G.clock - p.t < 0.09);
+      const old = s.helper ? null : s.pts.find((p) => G.clock - p.t < 0.09);
       if (old && Math.hypot(cx - old.x, cy - old.y) > view.w * 0.08 && G.clock - s.whoosh > 0.3) {
         s.whoosh = G.clock;
         S.kit('swipe');
@@ -777,6 +905,7 @@
     window.addEventListener('keydown', (e) => {
       const k = e.key;
       if (k === 'm' || k === 'M') toggleMute();
+      else if (k === 't' || k === 'T') callBuddy();
       else if (k === 'p' || k === 'P' || k === 'Escape') setPaused(G.state === 'play');
       else if ((k === ' ' || k === 'Enter') && (G.state === 'title' || G.state === 'over')) {
         if (document.activeElement && document.activeElement.classList.contains('avatar') && k === 'Enter') return;
@@ -795,6 +924,10 @@
     $('quitBtn').addEventListener('click', () => { clearField(); goTitle(); });
     $('pauseBtn').addEventListener('click', () => setPaused(true));
     $('muteBtn').addEventListener('click', toggleMute);
+    ui.buddyBtn.addEventListener('click', (e) => {
+      callBuddy();
+      e.currentTarget.blur();
+    });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         if (G.autoPause) setPaused(true);
@@ -828,6 +961,7 @@
     overlay.resize(w, h, dpr);
     layoutBackdrop();
     FT.chef.place(atDepth(CHEF_Z), W < H * 0.8);
+    if (FT.buddy.entry) placeBuddy();
   }
 
   function tick(dt) {
@@ -856,6 +990,12 @@
     const cx = FT.chef.root.position.x;
     for (const it of items) if (it.y > best) { best = it.y; look = clamp((it.x - cx) / (view.W * 0.6), -1, 1); }
     FT.chef.update(dt, look);
+    FT.buddy.update(dt);
+    updateBatted(gdt);
+    const guard = FT.buddy.guardLeft;
+    ui.pwBuddy.classList.toggle('on', guard > 0);
+    ui.buddyBtn.classList.toggle('guarding', guard > 0);
+    if (guard > 0) ui.pwBuddyFill.style.transform = `scaleX(${guard})`;
 
     if (G.scareT > 0) {
       G.scareT -= dt;
@@ -946,15 +1086,18 @@
     // zombie heads are the kit's zombie, head only, turned to face the camera
     const zLook = (Kit.roster.get('zombie') || {}).look;
     if (zLook) {
+      let proto = null; // built once; every toss is a clone sharing its geometry and materials
       FT.fruits.setZombieMaker(() => {
-        const p = Kit.people.build(zLook), head = p.head;
-        head.parent.remove(head);
-        head.position.set(0, -0.05, 0);
-        head.rotation.set(0, Math.PI, 0);
-        const g = new T.Group();
-        head.scale.setScalar(2.9);
-        g.add(head);
-        return g;
+        if (!proto) {
+          const head = Kit.people.build(zLook).head;
+          head.parent.remove(head);
+          head.position.set(0, -0.05, 0);
+          head.rotation.set(0, Math.PI, 0);
+          head.scale.setScalar(2.9);
+          proto = new T.Group();
+          proto.add(head);
+        }
+        return proto.clone();
       });
     }
     buildBackdrop();
@@ -975,6 +1118,8 @@
       muteBtn: $('muteBtn'), picker: $('picker'), bestName: $('bestName'), bestTitle: $('bestTitle'),
       ovScore: $('ovScore'), ovSliced: $('ovSliced'), ovCombo: $('ovCombo'), ovBest: $('ovBest'), ovBestLabel: $('ovBestLabel'),
       ovTitle: $('ovTitle'), newBest: $('newBest'),
+      buddyBtn: $('buddyBtn'), buddyFace: $('buddyFace'), buddyName: $('buddyName'), buddyKey: $('buddyKeyName'),
+      pwBuddy: $('pwBuddy'), pwBuddyFace: $('pwBuddyFace'), pwBuddyFill: $('pwBuddyFill'),
     });
     ui.muteBtn.textContent = S.isMuted() ? '🔇' : '🔊';
     try {
@@ -983,6 +1128,11 @@
       portraits = {};
     }
     faceTex = { teddy: makeFace('teddy'), tommy: makeFace('tommy') };
+    FT.buddy.init({
+      scene, flyers, view, toScreen, toast, items: () => items,
+      blade: { start: strokeStart, move: strokeMove, end: strokeEnd },
+    });
+    FT.buddy.actor.onSwish = FT.chef.onSwish;
     resize();
     setChef(store.get('chef', 'teddy'));
     buildPicker();
@@ -1051,6 +1201,13 @@
       return { kind, type: it.type, x: Math.round(p.x), y: Math.round(p.y) };
     },
     chef(kind) { return FT.chef.react(kind); },
+    // the buddy: call him like the button / T does (also tosses a card); buddyInfo() reports his visit
+    buddy() { return callBuddy(); },
+    buddyInfo() {
+      const r = FT.buddy.actor.root.position;
+      return { id: FT.buddy.entry.id, on: FT.buddy.on, t: +FT.buddy.t.toFixed(2), guarding: FT.buddy.guarding(), given: FT.buddy.given, holding: FT.buddy.holding, pose: FT.buddy.actor.pose, x: +r.x.toFixed(2), home: +FT.buddy.actor.home.x.toFixed(2), cards: items.filter((it) => it.kind === 'card').length };
+    },
+    card(id) { const it = tossCard(id); return it ? it.type : null; },
     setChef(id) { setChef(id, true); return G.chefId; },
     pause(on = true) { setPaused(on); return G.state; },
     // the Browser pane hides the page between test steps; this stops that from pausing the game

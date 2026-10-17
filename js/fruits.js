@@ -340,7 +340,7 @@
     };
     for (const p of def.parts) {
       const front = golden ? (p.role === 'skin' ? GOLD : GOLD_LEAF) : p.mat;
-      g.add(place(new T.Mesh(p.geo, clip(front)), p));
+      g.add(place(new T.Mesh(p.geo, Array.isArray(front) ? front.map(clip) : clip(front)), p));
       if (p.back) g.add(place(new T.Mesh(p.geo, basic(golden ? FLESH_GOLD : p.back)), p));
       if (p.inner) g.add(place(new T.Mesh(p.geo, basic(golden ? '#ffd24a' : p.inner.color, golden ? null : p.inner.map)), p, p.inner.s));
     }
@@ -444,6 +444,76 @@
     return g;
   }
 
+  // ---------------------------------------------------------------- character cards (tossed when you call the buddy)
+
+  // A trading card of a roster character: portrait and name on the front, a star pattern on the back. It slices
+  // like a fruit, so it is registered as one more fruit type, 'card-<id>'.
+  function card(entry, portraitURL) {
+    const id = 'card-' + entry.id;
+    if (FRUITS[id]) return id;
+    const color = entry.tag || { zoom: '#18b4ff', luna: '#b48cff', bolt: '#ff8a1f', bruno: '#2fb36a', zombie: '#8fbf6a' }[entry.id] || '#ffd400';
+    const W = 256, H = 352;
+    const [c, g] = canvas(W, H);
+    const front = tex(c);
+    const paint = (img) => {
+      g.clearRect(0, 0, W, H);
+      const rr = (x, y, w, h, r) => {
+        g.beginPath();
+        g.moveTo(x + r, y);
+        g.arcTo(x + w, y, x + w, y + h, r);
+        g.arcTo(x + w, y + h, x, y + h, r);
+        g.arcTo(x, y + h, x, y, r);
+        g.arcTo(x, y, x + w, y, r);
+        g.closePath();
+      };
+      g.fillStyle = '#14121f';
+      rr(0, 0, W, H, 26);
+      g.fill();
+      const grd = g.createLinearGradient(0, 0, 0, H);
+      grd.addColorStop(0, '#ffffff');
+      grd.addColorStop(1, color);
+      g.fillStyle = grd;
+      rr(10, 10, W - 20, H - 20, 18);
+      g.fill();
+      if (img) g.drawImage(img, 18, 22, W - 36, W - 36);
+      g.fillStyle = '#14121f';
+      rr(26, H - 92, W - 52, 62, 16);
+      g.fill();
+      g.font = '40px Bungee, "Arial Black", Impact, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#ffd400';
+      g.fillText(entry.name, W / 2, H - 60);
+      front.needsUpdate = true;
+    };
+    paint(null);
+    if (portraitURL) {
+      const img = new Image();
+      img.onload = () => paint(img);
+      img.src = portraitURL;
+    }
+    const [bc, bg] = canvas(128, 176);
+    bg.fillStyle = '#ffd400';
+    bg.fillRect(0, 0, 128, 176);
+    bg.fillStyle = '#ff3d7f';
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 6; x++) {
+      bg.font = '18px sans-serif';
+      bg.fillText('★', x * 22 + (y % 2 ? 11 : 0), y * 22 + 18);
+    }
+    bg.fillStyle = '#14121f';
+    bg.font = '44px Bungee, "Arial Black", Impact, sans-serif';
+    bg.textAlign = 'center';
+    bg.fillText('TT', 64, 104);
+    const edge = std('#fff8e6', { roughness: 0.6 });
+    const mats = [edge, edge, edge, edge, std('#ffffff', { map: front, roughness: 0.5 }), std('#ffffff', { map: tex(bc), roughness: 0.5 })];
+    FRUITS[id] = {
+      id, r: 1.15, juice: color, card: true, name: entry.name, entryId: entry.id,
+      parts: [{ geo: CARD, mat: mats, role: 'skin', back: '#fff8e6' }],
+    };
+    return id;
+  }
+  const CARD = new T.BoxGeometry(1.5, 2.06, 0.07);
+
   // ---------------------------------------------------------------- public
 
   FT.fruits = {
@@ -458,6 +528,7 @@
     half: (id, golden, plane) => halfFruit(FRUITS[id], golden, plane),
     zombie,
     bubble,
+    card,
     glowTexture,
     setZombieMaker(fn) { zombieMaker = fn; },
     canvas,

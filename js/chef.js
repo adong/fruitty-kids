@@ -10,7 +10,7 @@
   const rand = Kit.gfx.rand;
 
   const DUR = { cheer: 0.7, signature: 1.8, miss: 0.9, scare: 0.9, hello: 1.8, slice: 0 };
-  const SPEED = { idle: 2.2, cheer: 6, boxing: 4.6, peace: 4.2, wave: 5, jumpshot: 3, fall: 3, jump: 3 };
+  const SPEED = { idle: 2.2, cheer: 6, boxing: 6, peace: 4.2, wave: 5, jumpshot: 3, fall: 3, jump: 3 };
   const BALL_SIZE = 0.24;
 
   let scene = null, flyers = null, holder = null, p = null, entry = null, shadow = null, ball = null, hoop = null;

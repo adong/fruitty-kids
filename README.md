@@ -6,10 +6,10 @@ There are no image, model or audio files: the fruit are spheres, lathes and a be
 ## Play
 
 - **Double-click `index.html`.** It works offline, because Three.js and the kit are copied into `kit/`.
-- **Send one file:** `dist/fruit-teddy.html` is the whole game in one file, about 730 KB. AirDrop or email it, then open it in a browser.
-- **Rebuild that file** after any edit: `python3 kit/tools/bundle.py . --name fruit-teddy`
+- **Send one file:** `dist/fruitty-kids.html` is the whole game in one file, about 730 KB. AirDrop or email it, then open it in a browser.
+- **Rebuild that file** after any edit: `python3 kit/tools/bundle.py . --name fruitty-kids`
 - **Get kit updates** (new poses, characters or sounds) from `~/claude-games/kit`: `python3 ../kit/tools/sync.py .`, then rebuild.
-- Best scores and the chosen chef are saved per browser, and separately for each way of opening the game, so `index.html` and `dist/fruit-teddy.html` each keep their own.
+- Best scores and the chosen chef are saved per browser, and separately for each way of opening the game, so `index.html` and `dist/fruitty-kids.html` each keep their own.
 
 | Mouse | Touch | Keys | |
 |---|---|---|---|
@@ -66,7 +66,7 @@ js/fx.js       juice particles, wall splats, emoji flyers, and the 2D overlay (b
 js/chef.js     the chef: placement, reactions, signature moves, Teddy's ball and hoop
 js/game.js     view fitting, waves, slicing, combos, hearts, input, HUD, main loop, window.fruit
 kit/           copy of ~/claude-games/kit (Three.js r149, people, roster, portraits, sound, bundler); edit the kit there, not here
-dist/fruit-teddy.html   the single-file build
+dist/fruitty-kids.html  the single-file build
 PLAN.md        the original plan
 ```
 

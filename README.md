@@ -2,10 +2,14 @@
 
 [![FruiTTy Kids title screen](docs/screenshot.jpg)](https://adong.github.io/fruitty-kids/)
 
+Swipe to slice flying fruit. Watch out for the zombie bombs, and call your brother as a second chef.
+
+**中文：** 划一下，切开飞起来的水果。小心僵尸炸弹，叫兄弟来当第二个大厨。
+
 Press **?** any time (or tap the round **?** button on the left edge) to see the keys. The game waits while you look.
 Tap the language button under it (the A文 icon) to switch between English and 中文; the dashboard and every game remember the choice.
 
-A Fruit Ninja-style slicing game starring Teddy and Tommy. It's built with Claude Code from plain JavaScript and Three.js, in the same style as Metro Surfer.
+A fruit-slicing game starring Teddy and Tommy. It's built with Claude Code from plain JavaScript and Three.js, in the same style as Metro Surfer.
 There are no image, model or audio files: the fruit are spheres, lathes and a bent tube with canvas-painted skins, the characters come from the shared kit (`kit/`), and every sound is synthesised.
 
 ## Play

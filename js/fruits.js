@@ -483,15 +483,17 @@
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.fillStyle = '#ffd400';
-      g.fillText(entry.name, W / 2, H - 60);
+      g.fillText(Kit.lang ? Kit.lang.t(entry.name) : entry.name, W / 2, H - 60);
       front.needsUpdate = true;
     };
+    let shown = null;
     paint(null);
     if (portraitURL) {
       const img = new Image();
-      img.onload = () => paint(img);
+      img.onload = () => paint((shown = img));
       img.src = portraitURL;
     }
+    painters.push(() => paint(shown));
     const [bc, bg] = canvas(128, 176);
     bg.fillStyle = '#ffd400';
     bg.fillRect(0, 0, 128, 176);
@@ -513,6 +515,7 @@
     return id;
   }
   const CARD = new T.BoxGeometry(1.5, 2.06, 0.07);
+  const painters = []; // one per card, to repaint the name when the language changes
 
   // ---------------------------------------------------------------- public
 
@@ -529,6 +532,7 @@
     zombie,
     bubble,
     card,
+    repaintCards() { painters.forEach((f) => f()); },
     glowTexture,
     setZombieMaker(fn) { zombieMaker = fn; },
     canvas,

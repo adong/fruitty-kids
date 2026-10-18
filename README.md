@@ -3,6 +3,7 @@
 [![FruiTTy Kids title screen](docs/screenshot.jpg)](https://adong.github.io/fruitty-kids/)
 
 Press **?** any time (or tap the round **?** button on the left edge) to see the keys. The game waits while you look.
+Tap **中文 / EN** under it to switch between English and 中文 (the dashboard and every game remember the choice).
 
 A Fruit Ninja-style slicing game starring Teddy and Tommy. It's built with Claude Code from plain JavaScript and Three.js, in the same style as Metro Surfer.
 There are no image, model or audio files: the fruit are spheres, lathes and a bent tube with canvas-painted skins, the characters come from the shared kit (`kit/`), and every sound is synthesised.
@@ -88,6 +89,7 @@ js/fx.js       juice particles, wall splats, emoji flyers, and the 2D overlay (b
 js/chef.js     FT.makeActor: a chef in a bottom corner, with reactions, signature moves, Teddy's ball and hoop; FT.chef is you
 js/buddy.js    the buddy: his visit, helper blade, treat and guarding
 js/game.js     view fitting, waves, slicing, combos, hearts, input, HUD, main loop, window.fruit
+js/zh.js       中文 for every word on the page, the toasts, the canvas pop-ups and the ? panel (Kit.lang); names and the logo stay English
 kit/           copy of ~/claude-games/kit (Three.js r149, people, roster, portraits, sound, bundler); edit the kit there, not here
 dist/fruitty-kids.html  the single-file build
 PLAN.md        the original plan

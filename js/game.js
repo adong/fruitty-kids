@@ -514,7 +514,7 @@
   function missFruit(it) {
     if (FT.buddy.guarding()) {
       // he dives for it: no heart lost
-      overlay.text('SAVED!', toScreen(it.x, 0).x, view.h - 70, { color: '#7ed957', size: 30 });
+      overlay.text(Kit.lang.t('SAVED!'), toScreen(it.x, 0).x, view.h - 70, { color: '#7ed957', size: 30 });
       return saved();
     }
     S.miss();
@@ -1003,7 +1003,7 @@
     }
     if (G.booT > 0) {
       G.booT -= dt;
-      if (G.booT <= 0 && G.booAt) overlay.text('BOO!', G.booAt.x, G.booAt.y, { color: '#9be37a', size: 56, life: 0.9 });
+      if (G.booT <= 0 && G.booAt) overlay.text(Kit.lang.t('BOO!'), G.booAt.x, G.booAt.y, { color: '#9be37a', size: 56, life: 0.9 });
     }
     G.shake = Math.max(0, G.shake - dt);
     if (G.state === 'ending') {
@@ -1109,7 +1109,7 @@
     FT.chef.init(scene, flyers);
     FT.chef.onSwish = (at) => {
       const p = toScreen(at.x, at.y, at.z);
-      overlay.text('SWISH!', p.x, p.y + 30, { color: '#ff9f1c', size: 34, life: 1 });
+      overlay.text(Kit.lang.t('SWISH!'), p.x, p.y + 30, { color: '#ff9f1c', size: 34, life: 1 });
     };
 
     Object.assign(ui, {
